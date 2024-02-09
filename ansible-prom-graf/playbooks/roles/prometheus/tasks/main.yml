@@ -49,7 +49,7 @@
 
 - name: Ensure Prometheus Service
   template:
-    src: "prometheus.service.j2"
+    src: "prometheus.yml.j2"
     dest: "/etc/systemd/system/prometheus.service"
   notify: restart prometheus
 
