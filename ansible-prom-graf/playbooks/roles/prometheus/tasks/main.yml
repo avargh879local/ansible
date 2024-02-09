@@ -38,6 +38,33 @@
     group: "{{ prometheus_group }}"
     mode: '0755'
 
+- name: Set ownership for Prometheus data directory
+  become: true
+  file:
+    path: "/var/lib/prometheus"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    recurse: yes
+
+- name: Set permissions for Prometheus data directory
+  become: true
+  file:
+    path: "/var/lib/prometheus"
+    state: directory
+    mode: '0775'
+    recurse: yes
+
+- name: Ensure Prometheus data directory exists with correct ownership and permissions
+  become: true
+  file:
+    path: "/var/lib/prometheus"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0775'
+    recurse: yes
+
 - name: Copy Prometheus Configuration
   template:
     src: prometheus.yml.j2
