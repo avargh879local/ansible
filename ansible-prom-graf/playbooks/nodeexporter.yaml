@@ -1,0 +1,5 @@
+- name: Install node exporter to scrape metrics and give to prometheus
+  hosts: nodeexporter
+  become: true
+  roles:
+  - node_exporter
