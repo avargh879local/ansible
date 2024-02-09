@@ -1,0 +1,11 @@
+[Unit]
+Description=Node Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=root
+ExecStart={{ node_exporter_exec_start }}
+
+[Install]
+WantedBy=default.target
