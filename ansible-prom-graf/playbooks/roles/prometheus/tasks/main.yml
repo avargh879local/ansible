@@ -1,9 +1,14 @@
 # tasks file for roles/prometheus
-- name: Create Prometheus User
-  user:
-    name: "{{ prometheus_user }}"
+- name: Create Prometheus Group
+  ansible.builtin.group:
+    name: "{{ prometheus_group }}"
     system: yes
+
+- name: Create Prometheus User
+  ansible.builtin.user:
+    name: "{{ prometheus_user }}"
     group: "{{ prometheus_group }}"
+    system: yes
     createhome: no
 
 - name: Download Prometheus Binary
