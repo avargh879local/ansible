@@ -1,0 +1,71 @@
+name: Provision Free VM + Deploy Prometheus/Grafana
+
+on:
+  workflow_dispatch:  # Manual trigger
+  schedule:
+    - cron: '*/10 * * * *'  # Retry every 10 min if capacity low
+
+jobs:
+  provision-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: |
+          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.py | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Setup OCI Config
+        run: |
+          mkdir -p ~/.oci
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          key_content=${{ secrets.OCI_CLI_KEY_CONTENT }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_CLI_REGION }}
+          EOF
+
+      - name: Create Free VM Instance
+        id: create_vm
+        run: |
+          INSTANCE_ID=$(oci compute instance launch \
+            --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
+            --availability-domain "${{ secrets.AD_NAME }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus":4,"memoryInGBs":24}' \
+            --subnet-id ${{ secrets.OCI_SUBNET_ID }} \
+            --image-id ${{ secrets.IMAGE_ID }} \
+            --display-name "Monitoring-VM" \
+            --boot-volume-size-in-gbs 200 \
+            --ssh-authorized-keys '${{ secrets.SSH_PUBLIC_KEY }}' \
+            --query data.id --raw-output)
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+
+          # Wait for IP (up to 5 min)
+          for i in {1..30}; do
+            IP=$(oci compute instance list-vnics --instance-id $INSTANCE_ID --query "data[0].public-ip" --raw-output)
+            if [ -n "$IP" ]; then echo "public_ip=$IP" >> $GITHUB_OUTPUT; break; fi
+            sleep 10
+          done
+
+      - name: Install Ansible
+        run: sudo apt update && sudo apt install -y ansible
+
+      - name: Update Inventory with New VM IP
+        run: |
+          sed -i "s/<IP_of_Server_B>/${{ steps.create_vm.outputs.public_ip }}/g" inventory/hosts.yml
+          sed -i "s/<IP_of_Server_C>/${{ steps.create_vm.outputs.public_ip }}/g" inventory/hosts.yml
+          sed -i "s/<IP_of_Slave1>/${{ steps.create_vm.outputs.public_ip }}/g" inventory/hosts.yml  # Add more if needed
+
+      - name: Deploy Prometheus + Grafana
+        run: |
+          ansible-playbook -i inventory/hosts.yml playbooks/prometheus.yml --private-key <(echo "${{ secrets.ANSIBLE_SSH_KEY }}") -u ubuntu
+          ansible-playbook -i inventory/hosts.yml playbooks/grafana.yml --private-key <(echo "${{ secrets.ANSIBLE_SSH_KEY }}") -u ubuntu
+
+      - name: Notify Success
+        if: success()
+        run: echo "Your monitoring stack is live at http://${{ steps.create_vm.outputs.public_ip }}:3000 (Grafana default user/pass: admin/admin)"
