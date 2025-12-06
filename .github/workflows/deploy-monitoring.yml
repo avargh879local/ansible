@@ -40,7 +40,7 @@ jobs:
           [DEFAULT]
           user=$USER
           fingerprint=$FINGERPRINT
-          key_content=$KEY_CONTENT
+          key_content=$(printf %q "$KEY_CONTENT")  # Escaped for safety
           tenancy=$TENANCY
           region=$REGION
           EOF
