@@ -1,0 +1,49 @@
+name: Test Ansible Playbooks
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible and ansible-lint
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible ansible-lint
+          echo "$HOME/.local/bin" >> $GITHUB_PATH  # Fix PATH for ansible-lint
+
+      - name: Lint & Syntax Check
+        run: |
+          ansible-lint playbooks/*.yml
+          ansible-playbook --syntax-check playbooks/prometheus.yml
+          ansible-playbook --syntax-check playbooks/grafana.yml
+
+      - name: Run playbooks against localhost (simulation)
+        run: |
+          # Temporary local inventory
+          echo "[all]" > temp_inventory.ini
+          echo "localhost ansible_connection=local" >> temp_inventory.ini
+          echo "[prometheus]" >> temp_inventory.ini
+          echo "localhost" >> temp_inventory.ini
+          echo "[grafana]" >> temp_inventory.ini
+          echo "localhost" >> temp_inventory.ini
+          echo "[monitored]" >> temp_inventory.ini
+          echo "localhost" >> temp_inventory.ini
+
+          ansible-playbook -i temp_inventory.ini playbooks/prometheus.yml -e ansible_python_interpreter=$(which python3)
+          ansible-playbook -i temp_inventory.ini playbooks/grafana.yml -e ansible_python_interpreter=$(which python3)
+
+      - name: Success Summary
+        run: echo "✅ All playbooks tested successfully!"
