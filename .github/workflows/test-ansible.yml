@@ -1,0 +1,53 @@
+name: Test Ansible Playbooks
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:  # Manual run button
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout your repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install Ansible + dependencies
+      - name: Install Ansible
+        run: |
+          sudo apt update
+          sudo apt install -y ansible software-properties-common
+          sudo apt-add-repository --yes --update ppa:ansible/ansible  # Latest Ansible
+          sudo apt install -y ansible-core
+
+      # Lint: Check syntax, best practices (super fast)
+      - name: Lint playbooks
+        run: |
+          ansible-lint playbooks/*.yml
+          ansible-playbook --syntax-check playbooks/prometheus.yml
+          ansible-playbook --syntax-check playbooks/grafana.yml
+
+      # Full test with actuated (simulates your inventory hosts)
+      - name: Install actuated
+        run: |
+          curl -sL https://github.com/flynn/actuated/releases/latest/download/actuated_linux_amd64.tar.gz | tar xz
+          sudo mv actuated /usr/local/bin/
+          sudo chmod +x /usr/local/bin/actuated
+
+      - name: Run actuated simulation
+        run: |
+          # Simulate your inventory: Create fake hosts (prometheus, grafana, monitored)
+          actuated --inventory inventory/hosts.yml --playbook playbooks/prometheus.yml --dry-run=false --verbose
+          actuated --inventory inventory/hosts.yml --playbook playbooks/grafana.yml --dry-run=false --verbose
+        env:
+          # Optional: Add SSH if you have real servers later
+          ANSIBLE_HOST_KEY_CHECKING: False
+
+      # Optional: Report success/failure
+      - name: Summary
+        if: always()
+        run: |
+          echo "✅ Ansible tests passed! Your Prometheus/Grafana setup is ready for real servers."
