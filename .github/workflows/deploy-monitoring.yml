@@ -12,40 +12,56 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install OCI CLI
+      - name: Install OCI CLI & jq
         run: |
           curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.py | python3 -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          sudo apt install -y jq  # For JSON parsing
 
-      - name: Setup OCI Config
+      - name: Setup OCI Config from JSON Secret
+        env:
+          OCI_JSON: ${{ secrets.OCI_CREDENTIALS }}
         run: |
           mkdir -p ~/.oci
+          echo "$OCI_JSON" > oci.json
+          TENANCY=$(jq -r '.tenancy' oci.json)
+          USER=$(jq -r '.user' oci.json)
+          REGION=$(jq -r '.region' oci.json)
+          FINGERPRINT=$(jq -r '.fingerprint' oci.json)
+          KEY_CONTENT=$(jq -r '.key_content' oci.json)
+          COMPARTMENT=$(jq -r '.compartment_id' oci.json)
+          SUBNET=$(jq -r '.subnet_id' oci.json)
+          IMAGE=$(jq -r '.image_id' oci.json)
+          AD=$(jq -r '.ad_name' oci.json)
+          SSH_PUB=$(jq -r '.ssh_public_key' oci.json)
+          ANSIBLE_KEY=$(jq -r '.ansible_ssh_key' oci.json)
+
           cat > ~/.oci/config << EOF
           [DEFAULT]
-          user=${{ secrets.OCI_CLI_USER }}
-          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
-          key_content=${{ secrets.OCI_CLI_KEY_CONTENT }}
-          tenancy=${{ secrets.OCI_CLI_TENANCY }}
-          region=${{ secrets.OCI_CLI_REGION }}
+          user=$USER
+          fingerprint=$FINGERPRINT
+          key_content=$KEY_CONTENT
+          tenancy=$TENANCY
+          region=$REGION
           EOF
 
       - name: Create Free VM Instance
         id: create_vm
         run: |
           INSTANCE_ID=$(oci compute instance launch \
-            --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
-            --availability-domain "${{ secrets.AD_NAME }}" \
+            --compartment-id $COMPARTMENT \
+            --availability-domain "$AD" \
             --shape "VM.Standard.A1.Flex" \
             --shape-config '{"ocpus":4,"memoryInGBs":24}' \
-            --subnet-id ${{ secrets.OCI_SUBNET_ID }} \
-            --image-id ${{ secrets.IMAGE_ID }} \
+            --subnet-id $SUBNET \
+            --image-id $IMAGE \
             --display-name "Monitoring-VM" \
             --boot-volume-size-in-gbs 200 \
-            --ssh-authorized-keys '${{ secrets.SSH_PUBLIC_KEY }}' \
+            --ssh-authorized-keys "$SSH_PUB" \
             --query data.id --raw-output)
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
-          # Wait for IP (up to 5 min)
+          # Wait for IP
           for i in {1..30}; do
             IP=$(oci compute instance list-vnics --instance-id $INSTANCE_ID --query "data[0].public-ip" --raw-output)
             if [ -n "$IP" ]; then echo "public_ip=$IP" >> $GITHUB_OUTPUT; break; fi
@@ -63,8 +79,8 @@ jobs:
 
       - name: Deploy Prometheus + Grafana
         run: |
-          ansible-playbook -i inventory/hosts.yml playbooks/prometheus.yml --private-key <(echo "${{ secrets.ANSIBLE_SSH_KEY }}") -u ubuntu
-          ansible-playbook -i inventory/hosts.yml playbooks/grafana.yml --private-key <(echo "${{ secrets.ANSIBLE_SSH_KEY }}") -u ubuntu
+          ansible-playbook -i inventory/hosts.yml playbooks/prometheus.yml --private-key <(echo "$ANSIBLE_KEY") -u ubuntu
+          ansible-playbook -i inventory/hosts.yml playbooks/grafana.yml --private-key <(echo "$ANSIBLE_KEY") -u ubuntu
 
       - name: Notify Success
         if: success()
