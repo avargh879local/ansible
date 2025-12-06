@@ -36,11 +36,11 @@ jobs:
           SSH_PUB=$(jq -r '.ssh_public_key' oci.json)
           ANSIBLE_KEY=$(jq -r '.ansible_ssh_key' oci.json)
 
-          cat > ~/.oci/config << EOF
+          cat > ~/.oci/config << 'EOF'
           [DEFAULT]
           user=$USER
           fingerprint=$FINGERPRINT
-          key_content=$(printf %q "$KEY_CONTENT")  # Escaped for safety
+          key_content=$(echo -n "$KEY_CONTENT" | sed 's/\\n/\\\\n/g')  # Proper escape
           tenancy=$TENANCY
           region=$REGION
           EOF
